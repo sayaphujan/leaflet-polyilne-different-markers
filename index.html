@@ -1,0 +1,311 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Measurement</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="Leaflet.PolylineMeasure.css" />
+    <style>
+        #suggestions {
+            position: absolute;
+            background-color: #f1f1f1;
+            border: 1px solid #ccc;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+            width: 300px;
+        }
+
+        #suggestions a {
+            padding: 10px;
+            display: block;
+            text-decoration: none;
+            color: #333;
+        }
+
+        #suggestions a:hover {
+            background-color: #ddd;
+        }
+    </style>
+</head>
+<body>
+<div class="container" style="padding:5px">
+    <div class="row">
+        <div class="col-6 mt-5">
+            <label for="addressInput">Enter Address:</label>
+            <input type="text" id="addressInput" placeholder="Enter address..." oninput="searchAddress()">
+            <br/>
+            <!--<div id="results"></div>-->
+            <div id="suggestions"></div>
+            <br/>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th width="5%">#</th>
+                        <th width="5%">Mark</th>
+                        <th width="20%">Distance</th>
+                    </tr>
+                </thead>
+                <tbody class="distInfo">
+                    <!-- Table rows will be added dynamically here -->
+                </tbody>
+            </table>
+        </div>
+        <div class="col-6">
+            <div id="map" style="width:640px; height: 640px;"></div>
+        </div>
+    </div>
+</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="Leaflet.PolylineMeasure.js"></script>
+    <script>
+        var distInfo = $('.distInfo');
+        var addressInput = $('#addressInput');
+
+        var layerOsm = new L.TileLayer ('https://{s}.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {subdomains:['server','services'], maxZoom:19, noWrap:false, attribution:'<a href="https://www.arcgis.com/">ArcGIS</a>' });
+        
+        var map = new L.Map ('map').addLayer (layerOsm).setView (new L.LatLng(48, 0), 4);
+            L.control.scale ({maxWidth:240, metric:true, imperial:true, position: 'bottomleft'}).addTo (map);
+        
+        let polylineMeasure = L.control.polylineMeasure ({position:'topleft', unit:'kilometres', pin:'home', showBearings:true, clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true, showPinControl: true})
+            polylineMeasure.addTo (map);
+
+        function debugevent(e) { console.log(e.type, e, polylineMeasure._currentLine) }
+
+        //map.on('polylinemeasure:toggle', debugevent);
+        //map.on('polylinemeasure:start', debugevent);
+        //map.on('polylinemeasure:resume', debugevent);
+        //map.on('polylinemeasure:finish', debugevent);
+        map.on('polylinemeasure:change', debugevent);
+        //map.on('polylinemeasure:clear', debugevent);
+        //map.on('polylinemeasure:add', debugevent);
+        //map.on('polylinemeasure:insert', debugevent);
+        //map.on('polylinemeasure:move', debugevent);
+        //map.on('polylinemeasure:remove', debugevent);
+
+        // Define icons for different markers
+            // Function to create colored icons
+    function createColoredIcon(color) {
+        return new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-' + color + '.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            tooltipAnchor: [16, -28],
+            shadowUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png',
+            shadowSize: [41, 41],
+            shadowAnchor: [12, 41]
+        });
+    }
+    
+        var pinMarker, pinColor, status = null;
+        var pinMarkers = [];
+        var distanceInfo = [];
+        var coordInfo = [];
+        var data = [];
+        
+        map.on('polylinemeasure:toggle', function (e){
+            
+            status = e.status;
+            console.log(status);
+            
+            if(status === false){
+                data.length = 0;
+            }
+        });
+        
+        map.on('polylinemeasure:clear', function (e){
+            //map.removeLayer(pinMarker);
+            
+            for (var i = 0; i < pinMarkers.length; i++) {
+                map.removeLayer(pinMarkers[i]);
+            }
+            pinMarkers = []; // Clear the array
+            data = [];
+            distanceInfo = [];
+            coordInfo = [];
+            distInfo.empty();
+        });
+
+        map.on('polylinemeasure:add', function (e) {
+            //console.log('LatLng : '+e.latlng);
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+            
+            coordInfo.push({
+                    Lat: lat,
+                    Lng: lng
+                });
+        });
+
+        map.on('polylinemeasure:change', function (e) {
+          var distVal = polylineMeasure._currentLine.distance.toFixed(0);
+          var pinCat  = polylineMeasure._currentLine.pin;
+          var pinColorCat = polylineMeasure._currentLine.circleMarkers[0].options.id;
+          
+          //console.log('distance : '+ distVal);
+          distanceInfo.push({
+                    distance: distVal,
+                    pin: pinCat,
+                    pinColor: pinColorCat,
+                });
+
+          mergeInfo();
+          createPin();
+          updateDistanceTable();
+        });
+        
+        function createPin(){
+            console.log(data);
+            
+            for (var i = 0; i < data.length; i++) {
+                if(data[i].pinColor === undefined && data[i].pin == 'home' && data[i].distance == 0){
+                    pinMarker = L.marker([data[i].Lat, data[i].Lng], { icon: createColoredIcon('red') }).addTo(map);
+                    pinMarker.bindPopup("<b>Home</b>");
+                    pinMarkers.push(pinMarker);
+                }
+                
+                if(data[i].pinColor === undefined && data[i].pin == 'pedastal' && data[i].distance == 0){
+                    pinMarker = L.marker([data[i].Lat, data[i].Lng], { icon: createColoredIcon('blue') }).addTo(map);
+                    pinMarker.bindPopup("<b>Pedastal</b>");
+                    pinMarkers.push(pinMarker);
+                }
+                
+                if(data[i].pinColor === undefined && data[i].pin == 'handhole' && data[i].distance == 0){
+                    pinMarker = L.marker([data[i].Lat, data[i].Lng], { icon: createColoredIcon('green') }).addTo(map);
+                    pinMarker.bindPopup("<b>Handhole</b>");
+                    pinMarkers.push(pinMarker);
+                }
+            }
+        }
+
+        function mergeInfo() {
+            // Ensure both arrays have the same length before merging
+            if (coordInfo.length === distanceInfo.length) {
+                data = [];
+
+                for (var i = 0; i < coordInfo.length; i++) {
+                    var mergedItem = Object.assign({}, coordInfo[i], distanceInfo[i]);
+                    data.push(mergedItem);
+                }
+             // Now 'data' array contains objects with both coordinate and distance information
+                //console.log(data);
+            } else {
+                console.error("Arrays must have the same length for merging.");
+            }
+        }
+
+        function searchAddress() {
+            var addressInput = document.getElementById('addressInput').value;
+            var apiUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(addressInput);
+
+            // Perform the API request
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => displaySuggestions(data))
+                .catch(error => console.error('Error fetching data:', error));
+        }
+        
+        function displaySuggestions(data) {
+            var suggestionsDiv = document.getElementById('suggestions');
+            suggestionsDiv.innerHTML = ''; // Clear previous suggestions
+
+            if (data.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+
+            // Display each suggestion
+            data.forEach(result => {
+                var suggestionLink = document.createElement('a');
+                suggestionLink.href = '#';
+                suggestionLink.textContent = result.display_name;
+                suggestionLink.onclick = function() {
+                    map.setView([result.lat, result.lon], 10);
+                    // Clear the input field and hide suggestions
+                    document.getElementById('addressInput').value = result.display_name;
+                    suggestionsDiv.style.display = 'none';
+                    return false; // Prevent the page from navigating
+                };
+
+                suggestionsDiv.appendChild(suggestionLink);
+            });
+
+            suggestionsDiv.style.display = 'block';
+        }
+
+        function updateDistanceTable() {
+            //console.log(data);
+            // Clear existing rows
+            distInfo.empty();
+        
+            // Add new rows for each distance
+            for (var i = 0; i < data.length; i++) {
+                var distVal = parseFloat(data[i].distance);
+                var roundDist = Math.round(distVal / 1000);
+                var newRow = '<tr>'
+                              +'<td width="5%">' + (i + 1) + '</td>'
+                              +'<td width="5%">' + capFirst(data[i].pin) + '</td>'
+                              +'<td width="20%">' + addCommas(roundDist) + ' Km</td>'
+                              +'</tr>';
+                distInfo.append(newRow);
+            }
+            // Get the last element of the distanceInfo array
+            var lastData = data[data.length - 1];
+            //console.log(lastData);
+            
+            // Pass the last distance to saveDB function
+            saveDB(lastData);
+        }
+        
+        function saveDB(infoData) {
+            //console.log(infoData);
+            var address = $('#addressInput').val();
+            var lat = infoData.Lat;
+            var lng = infoData.Lng;
+            var distance = infoData.distance;
+
+            var data = {
+                address: address,
+                lat: lat,
+                lng: lng, 
+                distance: distance
+            };
+        
+            $.ajax({
+                type: 'POST',
+                url: 'db.php',
+                data: data,
+                success: function (response) {
+                    //console.log('Data saved successfully:', response);
+                },
+                error: function (error) {
+                    //console.error('Error saving data:', error);
+                }
+            });
+        }
+        
+        function addCommas(nStr)
+        {
+            nStr += '';
+            x = nStr.split('.');
+            x1 = x[0];
+            x2 = x.length > 1 ? '.' + x[0] : '';
+            var rgx = /(\d+)(\d{3})/;
+            while (rgx.test(x1)) {
+                x1 = x1.replace(rgx, '$1' + ',' + '$2');
+            }
+            return x1 + x2;
+        }
+        
+        function capFirst(str) {
+            return str.substring(0, 1).toUpperCase() + str.substring(1);
+        }
+
+    </script>
+</body>
+</html>
